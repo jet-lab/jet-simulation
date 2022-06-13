@@ -15,8 +15,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use std::sync::{Arc, Mutex};
-use std::time::{Duration, SystemTime};
+use std::sync::Arc;
 
 use anyhow::{bail, Result};
 use async_trait::async_trait;
@@ -104,21 +103,22 @@ pub struct RpcConnection(Arc<RpcContext>);
 struct RpcContext {
     rpc: RpcClient,
     payer: Keypair,
-    blockhash: Mutex<(Hash, SystemTime)>,
 }
 
 impl RpcConnection {
     pub fn new(payer: Keypair, rpc: RpcClient) -> RpcConnection {
-        RpcConnection(Arc::new(RpcContext {
-            rpc,
-            payer,
-            blockhash: Mutex::new((Hash::new_unique(), SystemTime::now())),
-        }))
+        RpcConnection(Arc::new(RpcContext { rpc, payer }))
     }
 }
 
 #[async_trait]
 impl SolanaRpcClient for RpcConnection {
+    async fn send_and_confirm_transaction(&self, transaction: &Transaction) -> Result<Signature> {
+        let ctx = self.0.clone();
+        let transaction = transaction.clone();
+
+        Ok(tokio::task::spawn_blocking(move || ctx.rpc.send_and_confirm_transaction(&transaction)).await??)
+    }
     async fn get_account(&self, address: &Pubkey) -> Result<Option<Account>> {
         let ctx = self.0.clone();
         let address = *address;
@@ -164,13 +164,9 @@ impl SolanaRpcClient for RpcConnection {
     }
 
     async fn get_latest_blockhash(&self) -> Result<Hash> {
-        let (mut blockhash, retrieved_at) = *self.0.blockhash.lock().unwrap();
-
-        if Duration::from_secs(1) < SystemTime::now().duration_since(retrieved_at).unwrap() {
-            let ctx = self.0.clone();
-            blockhash =
-                tokio::task::spawn_blocking(move || ctx.rpc.get_latest_blockhash()).await??;
-        }
+        let ctx = self.0.clone();
+        let blockhash =
+            tokio::task::spawn_blocking(move || ctx.rpc.get_latest_blockhash()).await??;
 
         Ok(blockhash)
     }
