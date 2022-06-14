@@ -551,18 +551,25 @@ impl SyscallStubs for RuntimeStubs {
 
 #[macro_export]
 macro_rules! create_test_runtime {
-    [$( $krate:ident ),+] => {{
-
+    [$($program:tt),+$(,)?] => {{
         let mut programs = vec![];
-
-        $({
-            let entry_fn: $crate::EntryFn = Box::new($krate::entry);
-            programs.push(($krate::id(), entry_fn));
-        })+
-
+        $(programs.push($crate::program!($program));)+
         TestRuntime::new(programs)
     }}
 }
+
+#[macro_export]
+macro_rules! program {
+    ($krate:ident) => {{
+        let entry_fn: $crate::EntryFn = Box::new($krate::entry);
+        ($krate::id(), entry_fn)
+    }};
+    (($id:expr, $processor:path)) => {{
+        let entry_fn: $crate::EntryFn = Box::new($processor);
+        ($id, entry_fn)
+    }};
+}
+
 
 #[async_trait]
 impl SolanaRpcClient for TestRuntime {
