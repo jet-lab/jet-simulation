@@ -117,7 +117,10 @@ impl SolanaRpcClient for RpcConnection {
         let ctx = self.0.clone();
         let transaction = transaction.clone();
 
-        Ok(tokio::task::spawn_blocking(move || ctx.rpc.send_and_confirm_transaction(&transaction)).await??)
+        Ok(
+            tokio::task::spawn_blocking(move || ctx.rpc.send_and_confirm_transaction(&transaction))
+                .await??,
+        )
     }
     async fn get_account(&self, address: &Pubkey) -> Result<Option<Account>> {
         let ctx = self.0.clone();

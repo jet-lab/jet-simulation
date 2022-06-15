@@ -18,7 +18,6 @@ solana-client = "1.9"
 solana-sdk = "1.9"
 solana-transaction-status = "1.9"
 
-
 spl-token = "3"
 spl-token-swap = "2"
 spl-associated-token-account = "1"
