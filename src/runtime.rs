@@ -570,7 +570,6 @@ macro_rules! program {
     }};
 }
 
-
 #[async_trait]
 impl SolanaRpcClient for TestRuntime {
     async fn get_account(&self, address: &Pubkey) -> anyhow::Result<Option<StoredAccount>> {
