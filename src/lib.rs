@@ -107,20 +107,20 @@ pub fn assert_custom_program_error<
     )
 }
 
-#[deprecated(note = "use `assert_custom_error`")]
+#[deprecated(note = "use `assert_custom_program_error`")]
 #[macro_export]
 macro_rules! assert_program_error_code {
     ($code:expr, $result:expr) => {{
         let expected: u32 = $code;
-        $crate::assert_custom_error(expected, $result)
+        $crate::assert_custom_program_error(expected, $result)
     }};
 }
 
-#[deprecated(note = "use `assert_custom_error`")]
+#[deprecated(note = "use `assert_custom_program_error`")]
 #[macro_export]
 macro_rules! assert_program_error {
     ($error:expr, $result:expr) => {{
-        $crate::assert_custom_error($error, $result)
+        $crate::assert_custom_program_error($error, $result)
     }};
 }
 
