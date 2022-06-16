@@ -276,7 +276,14 @@ impl SolanaRpcClient for RpcConnection {
     }
 
     fn get_clock(&self) -> Option<Clock> {
-        None
+        let slot = self.0.rpc.get_slot().ok()?;
+        let unix_timestamp = self.0.rpc.get_block_time(slot).ok()?;
+
+        Some(Clock {
+            slot,
+            unix_timestamp,
+            ..Default::default() // epoch probably doesn't matter?
+        })
     }
 
     fn set_clock(&self, _new_clock: Clock) {}
