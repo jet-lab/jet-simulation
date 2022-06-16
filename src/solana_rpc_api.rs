@@ -22,12 +22,16 @@ use async_trait::async_trait;
 
 use solana_account_decoder::UiAccountEncoding;
 use solana_client::rpc_client::RpcClient;
-use solana_client::rpc_config::{RpcAccountInfoConfig, RpcProgramAccountsConfig};
+use solana_client::rpc_config::{
+    RpcAccountInfoConfig, RpcProgramAccountsConfig, RpcSendTransactionConfig,
+};
 use solana_client::rpc_filter::RpcFilterType;
 use solana_sdk::account::Account;
 use solana_sdk::clock::Clock;
+use solana_sdk::commitment_config::{CommitmentConfig, CommitmentLevel};
 use solana_sdk::hash::Hash;
 use solana_sdk::instruction::Instruction;
+use solana_sdk::native_token::LAMPORTS_PER_SOL;
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::signature::{Keypair, Signature};
 use solana_sdk::signer::Signer;
@@ -103,11 +107,63 @@ pub struct RpcConnection(Arc<RpcContext>);
 struct RpcContext {
     rpc: RpcClient,
     payer: Keypair,
+    tx_config: Option<RpcSendTransactionConfig>,
 }
 
 impl RpcConnection {
     pub fn new(payer: Keypair, rpc: RpcClient) -> RpcConnection {
-        RpcConnection(Arc::new(RpcContext { rpc, payer }))
+        RpcConnection(Arc::new(RpcContext {
+            rpc,
+            payer,
+            tx_config: None,
+        }))
+    }
+
+    pub fn new_with_config(
+        payer: Keypair,
+        rpc: RpcClient,
+        tx_config: Option<RpcSendTransactionConfig>,
+    ) -> RpcConnection {
+        RpcConnection(Arc::new(RpcContext {
+            rpc,
+            payer,
+            tx_config,
+        }))
+    }
+
+    /// Optimistic = assume there is no risk. so we don't need:
+    /// - finality (processed can be trusted)
+    /// - preflight checks (not worried about losing sol)
+    ///
+    /// This is desirable for testing because:
+    /// - tests can run faster (never need to wait for finality)
+    /// - validator logs are more comprehensive (preflight checks obscure error logs)
+    /// - there is nothing at stake in a local test validator
+    pub fn new_optimistic(payer: Keypair, url: &str) -> RpcConnection {
+        RpcConnection(Arc::new(RpcContext {
+            rpc: RpcClient::new_with_commitment(
+                url,
+                CommitmentConfig {
+                    commitment: CommitmentLevel::Processed,
+                },
+            ),
+            payer,
+            tx_config: Some(solana_client::rpc_config::RpcSendTransactionConfig {
+                skip_preflight: true,
+                ..Default::default()
+            }),
+        }))
+    }
+
+    /// Optimistic client for a local validator with a funded payer
+    pub fn new_local_funded() -> Result<RpcConnection> {
+        let runtime = RpcConnection::new_optimistic(Keypair::new(), "http://127.0.0.1:8899");
+        runtime
+            .0
+            .rpc
+            .request_airdrop(&runtime.payer().pubkey(), 1000 * LAMPORTS_PER_SOL)?;
+
+        Ok(runtime)
     }
 }
 
@@ -116,12 +172,23 @@ impl SolanaRpcClient for RpcConnection {
     async fn send_and_confirm_transaction(&self, transaction: &Transaction) -> Result<Signature> {
         let ctx = self.0.clone();
         let transaction = transaction.clone();
+        let commitment = self.0.rpc.commitment();
+        let tx_config = self.0.tx_config.unwrap_or(RpcSendTransactionConfig {
+            preflight_commitment: Some(commitment.commitment),
+            ..Default::default()
+        });
 
-        Ok(
-            tokio::task::spawn_blocking(move || ctx.rpc.send_and_confirm_transaction(&transaction))
-                .await??,
-        )
+        Ok(tokio::task::spawn_blocking(move || {
+            ctx.rpc
+                .send_and_confirm_transaction_with_spinner_and_config(
+                    &transaction,
+                    commitment,
+                    tx_config,
+                )
+        })
+        .await??)
     }
+
     async fn get_account(&self, address: &Pubkey) -> Result<Option<Account>> {
         let ctx = self.0.clone();
         let address = *address;
