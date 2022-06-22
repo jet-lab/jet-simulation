@@ -15,6 +15,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+use anyhow::Error;
+use solana_client::client_error::ClientError;
 use std::{
     mem::MaybeUninit,
     sync::{Mutex, Once},
@@ -23,7 +25,8 @@ use std::{
 use rand::rngs::mock::StepRng;
 use solana_rpc_api::SolanaRpcClient;
 use solana_sdk::{
-    account_info::AccountInfo, program_error::ProgramError, pubkey::Pubkey, signature::Keypair,
+    account_info::AccountInfo, instruction::InstructionError, program_error::ProgramError,
+    pubkey::Pubkey, signature::Keypair, transaction::TransactionError,
 };
 
 pub mod runtime;
@@ -74,46 +77,50 @@ pub async fn create_wallet(
     Ok(wallet)
 }
 
+/// Asserts that an error is a custom solana error with the expected code number
+pub fn assert_custom_program_error<
+    T: std::fmt::Debug,
+    E: Into<u32> + Clone + std::fmt::Debug,
+    A: Into<anyhow::Error>,
+>(
+    expected_error: E,
+    actual_result: Result<T, A>,
+) {
+    let expected_num = expected_error.clone().into();
+    let actual_err: Error = actual_result.expect_err("result is not an error").into();
+
+    let actual_num = match (
+        actual_err
+            .downcast_ref::<ClientError>()
+            .and_then(ClientError::get_transaction_error),
+        actual_err.downcast_ref::<ProgramError>(),
+    ) {
+        (Some(TransactionError::InstructionError(_, InstructionError::Custom(n))), _) => n,
+        (_, Some(ProgramError::Custom(n))) => *n,
+        _ => panic!("not a custom program error: {:?}", actual_err),
+    };
+
+    assert_eq!(
+        expected_num, actual_num,
+        "expected error {:?} as code {} but got {}",
+        expected_error, expected_num, actual_err
+    )
+}
+
+#[deprecated(note = "use `assert_custom_program_error`")]
 #[macro_export]
 macro_rules! assert_program_error_code {
     ($code:expr, $result:expr) => {{
-        use solana_sdk::program_error::ProgramError;
-
-        assert!($result.is_err(), "result is not an error");
-        let err_obj = $result.unwrap_err();
-        let actual_err = err_obj
-            .downcast_ref::<ProgramError>()
-            .expect("not a program error");
-
-        let expect_err = &ProgramError::Custom($code);
-
-        assert_eq!(
-            expect_err, actual_err,
-            "expected error {} but got {}",
-            expect_err, actual_err
-        )
+        let expected: u32 = $code;
+        $crate::assert_custom_program_error(expected, $result)
     }};
 }
 
+#[deprecated(note = "use `assert_custom_program_error`")]
 #[macro_export]
 macro_rules! assert_program_error {
     ($error:expr, $result:expr) => {{
-        use solana_sdk::program_error::ProgramError;
-
-        let result_value = $result;
-        assert!(result_value.is_err(), "result is not an error");
-        let err_obj = result_value.unwrap_err();
-        let actual_err = err_obj
-            .downcast_ref::<ProgramError>()
-            .expect("not a program error");
-
-        let expect_err = &ProgramError::Custom($error as u32 + 6000);
-
-        assert_eq!(
-            expect_err, actual_err,
-            "expected error {} but got {}",
-            expect_err, actual_err
-        )
+        $crate::assert_custom_program_error($error, $result)
     }};
 }
 

@@ -25,7 +25,7 @@ use async_trait::async_trait;
 use solana_sdk::account::Account as StoredAccount;
 use solana_sdk::account_info::AccountInfo;
 use solana_sdk::clock::Clock;
-use solana_sdk::entrypoint::SUCCESS;
+use solana_sdk::entrypoint::{ProgramResult, SUCCESS};
 use solana_sdk::hash::Hash;
 use solana_sdk::instruction::{AccountMeta, Instruction};
 use solana_sdk::msg;
@@ -61,16 +61,17 @@ impl TestRuntime {
         programs
             .entry(spl_token::ID)
             .or_insert_with(|| Box::new(spl_token::processor::Processor::process));
-
         programs
             .entry(spl_token_swap::ID)
             .or_insert_with(|| Box::new(spl_token_swap::processor::Processor::process));
-
         programs
             .entry(spl_associated_token_account::ID)
             .or_insert_with(|| {
                 Box::new(spl_associated_token_account::processor::process_instruction)
             });
+        programs
+            .entry(solana_sdk::compute_budget::ID)
+            .or_insert_with(|| Box::new(noop_program));
 
         let accounts = Mutex::new(HashMap::with_capacity(ACCOUNT_TABLE_SIZE));
         let signatures = Mutex::new(HashMap::new());
@@ -568,6 +569,10 @@ macro_rules! program {
         let entry_fn: $crate::EntryFn = Box::new($processor);
         ($id, entry_fn)
     }};
+}
+
+pub fn noop_program(_: &Pubkey, _: &[AccountInfo], _: &[u8]) -> ProgramResult {
+    Ok(())
 }
 
 #[async_trait]
