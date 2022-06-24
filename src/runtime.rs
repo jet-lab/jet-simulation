@@ -548,7 +548,7 @@ impl SyscallStubs for RuntimeStubs {
         let storage = self.0.return_data.lock().unwrap();
         storage.clone()
     }
-    
+
     fn sol_get_stack_height(&self) -> u64 {
         self.0.call_stack.lock().borrow().len() as u64
     }
