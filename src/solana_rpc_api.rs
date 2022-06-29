@@ -161,7 +161,7 @@ impl RpcConnection {
         runtime
             .0
             .rpc
-            .request_airdrop(&runtime.payer().pubkey(), 1000 * LAMPORTS_PER_SOL)?;
+            .request_airdrop(&runtime.payer().pubkey(), 100_000 * LAMPORTS_PER_SOL)?;
 
         Ok(runtime)
     }
