@@ -21,7 +21,7 @@ use anyhow::{bail, Result};
 use async_trait::async_trait;
 
 use solana_account_decoder::UiAccountEncoding;
-use solana_client::rpc_client::RpcClient;
+use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_client::rpc_config::{
     RpcAccountInfoConfig, RpcProgramAccountsConfig, RpcSendTransactionConfig,
 };
@@ -98,7 +98,7 @@ pub trait SolanaRpcClient: Send + Sync {
     }
 
     fn payer(&self) -> &Keypair;
-    fn get_clock(&self) -> Option<Clock>;
+    async fn get_clock(&self) -> Option<Clock>;
     fn set_clock(&self, new_clock: Clock);
 }
 
@@ -142,7 +142,7 @@ impl RpcConnection {
     pub fn new_optimistic(payer: Keypair, url: &str) -> RpcConnection {
         RpcConnection(Arc::new(RpcContext {
             rpc: RpcClient::new_with_commitment(
-                url,
+                url.to_string(),
                 CommitmentConfig {
                     commitment: CommitmentLevel::Processed,
                 },
@@ -156,12 +156,13 @@ impl RpcConnection {
     }
 
     /// Optimistic client for a local validator with a funded payer
-    pub fn new_local_funded() -> Result<RpcConnection> {
+    pub async fn new_local_funded() -> Result<RpcConnection> {
         let runtime = RpcConnection::new_optimistic(Keypair::new(), "http://127.0.0.1:8899");
         runtime
             .0
             .rpc
-            .request_airdrop(&runtime.payer().pubkey(), 100_000 * LAMPORTS_PER_SOL)?;
+            .request_airdrop(&runtime.payer().pubkey(), 100_000 * LAMPORTS_PER_SOL)
+            .await?;
 
         Ok(runtime)
     }
@@ -170,42 +171,34 @@ impl RpcConnection {
 #[async_trait]
 impl SolanaRpcClient for RpcConnection {
     async fn send_and_confirm_transaction(&self, transaction: &Transaction) -> Result<Signature> {
-        let ctx = self.0.clone();
-        let transaction = transaction.clone();
         let commitment = self.0.rpc.commitment();
         let tx_config = self.0.tx_config.unwrap_or(RpcSendTransactionConfig {
             preflight_commitment: Some(commitment.commitment),
             ..Default::default()
         });
 
-        Ok(tokio::task::spawn_blocking(move || {
-            ctx.rpc
-                .send_and_confirm_transaction_with_spinner_and_config(
-                    &transaction,
-                    commitment,
-                    tx_config,
-                )
-        })
-        .await??)
+        Ok(self
+            .0
+            .rpc
+            .send_and_confirm_transaction_with_spinner_and_config(
+                transaction,
+                commitment,
+                tx_config,
+            )
+            .await?)
     }
 
     async fn get_account(&self, address: &Pubkey) -> Result<Option<Account>> {
-        let ctx = self.0.clone();
-        let address = *address;
-
-        Ok(tokio::task::spawn_blocking(move || {
-            ctx.rpc
-                .get_multiple_accounts(&[address])
-                .map(|mut list| list.pop().unwrap())
-        })
-        .await??)
+        Ok(self
+            .0
+            .rpc
+            .get_multiple_accounts(&[*address])
+            .await
+            .map(|mut list| list.pop().unwrap())?)
     }
 
     async fn get_multiple_accounts(&self, pubkeys: &[Pubkey]) -> Result<Vec<Option<Account>>> {
-        let ctx = self.0.clone();
-        let pubkeys = pubkeys.to_vec();
-
-        Ok(tokio::task::spawn_blocking(move || ctx.rpc.get_multiple_accounts(&pubkeys)).await??)
+        Ok(self.0.rpc.get_multiple_accounts(pubkeys).await?)
     }
 
     async fn get_program_accounts(
@@ -213,13 +206,13 @@ impl SolanaRpcClient for RpcConnection {
         program_id: &Pubkey,
         size: Option<usize>,
     ) -> Result<Vec<(Pubkey, Account)>> {
-        let ctx = self.0.clone();
-        let program_id = *program_id;
         let filters = size.map(|s| vec![RpcFilterType::DataSize(s as u64)]);
 
-        Ok(tokio::task::spawn_blocking(move || {
-            ctx.rpc.get_program_accounts_with_config(
-                &program_id,
+        Ok(self
+            .0
+            .rpc
+            .get_program_accounts_with_config(
+                program_id,
                 RpcProgramAccountsConfig {
                     filters,
                     account_config: RpcAccountInfoConfig {
@@ -229,55 +222,39 @@ impl SolanaRpcClient for RpcConnection {
                     ..Default::default()
                 },
             )
-        })
-        .await??)
+            .await?)
     }
 
     async fn get_latest_blockhash(&self) -> Result<Hash> {
-        let ctx = self.0.clone();
-        let blockhash =
-            tokio::task::spawn_blocking(move || ctx.rpc.get_latest_blockhash()).await??;
-
-        Ok(blockhash)
+        Ok(self.0.rpc.get_latest_blockhash().await?)
     }
 
     async fn get_minimum_balance_for_rent_exemption(&self, length: usize) -> Result<u64> {
-        let ctx = self.0.clone();
-
-        Ok(tokio::task::spawn_blocking(move || {
-            ctx.rpc.get_minimum_balance_for_rent_exemption(length)
-        })
-        .await??)
+        Ok(self
+            .0
+            .rpc
+            .get_minimum_balance_for_rent_exemption(length)
+            .await?)
     }
 
     async fn send_transaction(&self, transaction: &Transaction) -> Result<Signature> {
-        let ctx = self.0.clone();
-        let tx = transaction.clone();
-
-        Ok(tokio::task::spawn_blocking(move || ctx.rpc.send_transaction(&tx)).await??)
+        Ok(self.0.rpc.send_transaction(transaction).await?)
     }
 
     async fn get_signature_statuses(
         &self,
         signatures: &[Signature],
     ) -> Result<Vec<Option<TransactionStatus>>> {
-        let ctx = self.0.clone();
-        let sigs = signatures.to_vec();
-
-        Ok(
-            tokio::task::spawn_blocking(move || ctx.rpc.get_signature_statuses(&sigs))
-                .await??
-                .value,
-        )
+        Ok(self.0.rpc.get_signature_statuses(signatures).await?.value)
     }
 
     fn payer(&self) -> &Keypair {
         &self.0.payer
     }
 
-    fn get_clock(&self) -> Option<Clock> {
-        let slot = self.0.rpc.get_slot().ok()?;
-        let unix_timestamp = self.0.rpc.get_block_time(slot).ok()?;
+    async fn get_clock(&self) -> Option<Clock> {
+        let slot = self.0.rpc.get_slot().await.ok()?;
+        let unix_timestamp = self.0.rpc.get_block_time(slot).await.ok()?;
 
         Some(Clock {
             slot,
