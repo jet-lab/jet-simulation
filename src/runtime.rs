@@ -691,7 +691,7 @@ impl SolanaRpcClient for TestRuntime {
         }
     }
 
-    fn get_clock(&self) -> Option<Clock> {
+    async fn get_clock(&self) -> Option<Clock> {
         Some(self.get_clock())
     }
 
