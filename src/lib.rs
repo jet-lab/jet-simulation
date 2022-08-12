@@ -19,38 +19,41 @@ use anyhow::Error;
 use solana_client::client_error::ClientError;
 use std::{
     mem::MaybeUninit,
+    path::Path,
     sync::{Mutex, Once},
 };
 
 use rand::rngs::mock::StepRng;
-use solana_rpc_api::SolanaRpcClient;
 use solana_sdk::{
     account_info::AccountInfo, instruction::InstructionError, program_error::ProgramError,
     pubkey::Pubkey, signature::Keypair, transaction::TransactionError,
 };
 
-pub mod runtime;
-pub mod solana_rpc_api;
+mod runtime;
+mod solana_rpc_api;
+
+pub use runtime::{Entrypoint, TestRuntime};
+pub use solana_rpc_api::{RpcConnection, SolanaRpcClient};
 
 pub type EntryFn =
     Box<dyn Fn(&Pubkey, &[AccountInfo], &[u8]) -> Result<(), ProgramError> + Send + Sync>;
 
 pub async fn send_and_confirm(
     rpc: &std::sync::Arc<dyn SolanaRpcClient>,
+    payer: &Keypair,
     instructions: &[solana_sdk::instruction::Instruction],
     signers: &[&solana_sdk::signature::Keypair],
 ) -> Result<solana_sdk::signature::Signature, anyhow::Error> {
     use solana_sdk::signature::Signer;
 
     let blockhash = rpc.get_latest_blockhash().await?;
-    let mut all_signers = vec![rpc.payer()];
-
-    all_signers.extend(signers);
+    let mut signing_keypairs = vec![payer];
+    signing_keypairs.extend(signers);
 
     let tx = solana_sdk::transaction::Transaction::new_signed_with_payer(
         instructions,
-        Some(&rpc.payer().pubkey()),
-        &all_signers,
+        Some(&payer.pubkey()),
+        &signing_keypairs,
         blockhash,
     );
 
@@ -60,11 +63,12 @@ pub async fn send_and_confirm(
 /// Generate a new wallet keypair with some initial funding
 pub async fn create_wallet(
     rpc: &std::sync::Arc<dyn SolanaRpcClient>,
+    payer: &Keypair,
     lamports: u64,
 ) -> Result<solana_sdk::signature::Keypair, anyhow::Error> {
     let wallet = solana_sdk::signature::Keypair::new();
     let tx = solana_sdk::system_transaction::create_account(
-        rpc.payer(),
+        payer,
         &wallet,
         rpc.get_latest_blockhash().await?,
         lamports,
@@ -157,4 +161,18 @@ impl rand::RngCore for MockRng {
     fn try_fill_bytes(&mut self, dest: &mut [u8]) -> Result<(), rand::Error> {
         self.0.try_fill_bytes(dest)
     }
+}
+
+pub fn load_native_programs(
+    programs: impl IntoIterator<Item = (Pubkey, impl AsRef<Path>)>,
+) -> anyhow::Result<Vec<(Pubkey, Entrypoint)>> {
+    programs
+        .into_iter()
+        .map(|(address, path)| unsafe {
+            let lib = dlopen::raw::Library::open(path.as_ref())?;
+            let entrypoint = lib.symbol("entrypoint")?;
+
+            Ok((address, entrypoint))
+        })
+        .collect()
 }

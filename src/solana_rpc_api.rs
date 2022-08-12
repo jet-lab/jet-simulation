@@ -30,7 +30,6 @@ use solana_sdk::account::Account;
 use solana_sdk::clock::Clock;
 use solana_sdk::commitment_config::{CommitmentConfig, CommitmentLevel};
 use solana_sdk::hash::Hash;
-use solana_sdk::instruction::Instruction;
 use solana_sdk::native_token::LAMPORTS_PER_SOL;
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::signature::{Keypair, Signature};
@@ -57,6 +56,8 @@ pub trait SolanaRpcClient: Send + Sync {
         size: Option<usize>,
     ) -> Result<Vec<(Pubkey, Account)>>;
 
+    async fn airdrop(&self, account: &Pubkey, amount: u64) -> Result<()>;
+
     async fn send_and_confirm_transaction(&self, transaction: &Transaction) -> Result<Signature> {
         let signature = self.send_transaction(transaction).await?;
         let _ = self.confirm_transactions(&[signature]).await?;
@@ -79,27 +80,8 @@ pub trait SolanaRpcClient: Send + Sync {
         bail!("failed to confirm signatures: {:?}", signatures);
     }
 
-    async fn create_transaction(
-        &self,
-        signers: &[&Keypair],
-        instructions: &[Instruction],
-    ) -> Result<Transaction> {
-        let blockhash = self.get_latest_blockhash().await?;
-        let mut all_signers = vec![self.payer()];
-
-        all_signers.extend(signers);
-
-        Ok(Transaction::new_signed_with_payer(
-            instructions,
-            Some(&self.payer().pubkey()),
-            &all_signers,
-            blockhash,
-        ))
-    }
-
-    fn payer(&self) -> &Keypair;
-    fn get_clock(&self) -> Option<Clock>;
-    fn set_clock(&self, new_clock: Clock);
+    async fn get_clock(&self) -> Result<Clock>;
+    async fn set_clock(&self, new_clock: Clock) -> Result<()>;
 }
 
 pub struct RpcConnection(Arc<RpcContext>);
@@ -161,7 +143,7 @@ impl RpcConnection {
         runtime
             .0
             .rpc
-            .request_airdrop(&runtime.payer().pubkey(), 100_000 * LAMPORTS_PER_SOL)?;
+            .request_airdrop(&runtime.0.payer.pubkey(), 100_000 * LAMPORTS_PER_SOL)?;
 
         Ok(runtime)
     }
@@ -233,6 +215,14 @@ impl SolanaRpcClient for RpcConnection {
         .await??)
     }
 
+    async fn airdrop(&self, account: &Pubkey, amount: u64) -> Result<()> {
+        let ctx = self.0.clone();
+        let account = *account;
+        let _ = tokio::task::spawn_blocking(move || ctx.rpc.request_airdrop(&account, amount))
+            .await??;
+        Ok(())
+    }
+
     async fn get_latest_blockhash(&self) -> Result<Hash> {
         let ctx = self.0.clone();
         let blockhash =
@@ -271,20 +261,15 @@ impl SolanaRpcClient for RpcConnection {
         )
     }
 
-    fn payer(&self) -> &Keypair {
-        &self.0.payer
-    }
-
-    fn get_clock(&self) -> Option<Clock> {
-        let slot = self.0.rpc.get_slot().ok()?;
-        let unix_timestamp = self.0.rpc.get_block_time(slot).ok()?;
-
-        Some(Clock {
-            slot,
-            unix_timestamp,
-            ..Default::default() // epoch probably doesn't matter?
+    async fn get_clock(&self) -> Result<Clock> {
+        let ctx = self.0.clone();
+        Ok(Clock {
+            slot: ctx.rpc.get_slot()?,
+            ..Default::default()
         })
     }
 
-    fn set_clock(&self, _new_clock: Clock) {}
+    async fn set_clock(&self,new_clock:Clock) -> Result<()> {
+        bail!("method not supported on real rpc");
+    }
 }
