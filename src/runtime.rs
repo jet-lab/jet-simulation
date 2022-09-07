@@ -20,6 +20,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
+use anyhow::{Error, Result};
 use async_trait::async_trait;
 
 use solana_sdk::account::Account as StoredAccount;
@@ -29,20 +30,18 @@ use solana_sdk::entrypoint::{ProgramResult, SUCCESS};
 use solana_sdk::hash::Hash;
 use solana_sdk::instruction::{AccountMeta, Instruction};
 use solana_sdk::msg;
-use solana_sdk::native_token::LAMPORTS_PER_SOL;
 use solana_sdk::packet::PACKET_DATA_SIZE;
 use solana_sdk::program_error::ProgramError;
 use solana_sdk::program_stubs::{set_syscall_stubs, SyscallStubs};
 use solana_sdk::pubkey::Pubkey;
-use solana_sdk::signature::{Keypair, Signature};
-use solana_sdk::signer::Signer;
+use solana_sdk::signature::Signature;
 use solana_sdk::system_instruction::{SystemInstruction, MAX_PERMITTED_DATA_LENGTH};
 use solana_sdk::system_program::{self, ID as SYSTEM_PROGRAM_ID};
 use solana_sdk::transaction::Transaction;
 
 use solana_transaction_status::{TransactionConfirmationStatus, TransactionStatus};
 
-use crate::solana_rpc_api::SolanaRpcClient;
+use crate::solana_rpc_interface::SolanaRpcInterface;
 
 const ACCOUNT_TABLE_SIZE: usize = 10_240;
 
@@ -580,30 +579,30 @@ pub fn noop_program(_: &Pubkey, _: &[AccountInfo], _: &[u8]) -> ProgramResult {
 }
 
 #[async_trait]
-impl SolanaRpcClient for TestRuntime {
-    async fn get_account(&self, address: &Pubkey) -> anyhow::Result<Option<StoredAccount>> {
+impl SolanaRpcInterface for TestRuntime {
+    async fn get_account(&self, address: &Pubkey) -> Result<StoredAccount> {
         let info = self.get_account_info(address);
 
         if info.data_is_empty() {
-            return Ok(None);
+            return Err(Error::msg("account does not exist"));
         }
 
         let lamports = **info.lamports.borrow();
         let data = info.data.borrow().to_vec();
 
-        Ok(Some(StoredAccount {
+        Ok(StoredAccount {
             data,
             lamports,
             owner: *info.owner,
             executable: info.executable,
             rent_epoch: info.rent_epoch,
-        }))
+        })
     }
 
     async fn get_multiple_accounts(
         &self,
         pubkeys: &[Pubkey],
-    ) -> anyhow::Result<Vec<Option<StoredAccount>>> {
+    ) -> Result<Vec<Option<StoredAccount>>> {
         let infos = pubkeys
             .iter()
             .map(|address| {
@@ -632,69 +631,45 @@ impl SolanaRpcClient for TestRuntime {
         &self,
         program_id: &Pubkey,
         size: Option<usize>,
-    ) -> anyhow::Result<Vec<(Pubkey, StoredAccount)>> {
+    ) -> Result<Vec<(Pubkey, StoredAccount)>> {
         Ok(self.get_program_accounts(program_id, size))
     }
 
-    async fn get_latest_blockhash(&self) -> anyhow::Result<Hash> {
+    async fn get_latest_blockhash(&self) -> Result<Hash> {
         Ok(Hash::new_unique())
     }
 
-    async fn get_minimum_balance_for_rent_exemption(&self, length: usize) -> anyhow::Result<u64> {
+    async fn get_minimum_balance_for_rent_exemption(&self, length: usize) -> Result<u64> {
         Ok(self.minimum_rent_balance(length))
     }
 
-    async fn send_transaction(&self, transaction: &Transaction) -> anyhow::Result<Signature> {
+    async fn send_transaction(&self, transaction: &Transaction) -> Result<Signature> {
         Ok(self.execute_transaction(transaction).map_err(|(_, e)| e)?)
     }
 
     async fn get_signature_statuses(
         &self,
         signatures: &[Signature],
-    ) -> anyhow::Result<Vec<Option<TransactionStatus>>> {
+    ) -> Result<Vec<Option<TransactionStatus>>> {
         Ok(signatures
             .iter()
             .map(|s| self.get_signature_status(s))
             .collect())
     }
 
-    async fn confirm_transactions(&self, signatures: &[Signature]) -> anyhow::Result<Vec<bool>> {
+    async fn confirm_transactions(&self, signatures: &[Signature]) -> Result<Vec<bool>> {
         Ok(signatures
             .iter()
             .map(|s| self.confirm_transaction(s).unwrap())
             .collect())
     }
 
-    fn payer(&self) -> &Keypair {
-        use std::mem::MaybeUninit;
-        use std::sync::Once;
-
-        unsafe {
-            static mut DEFAULT_PAYER: MaybeUninit<Keypair> = MaybeUninit::uninit();
-            static DEFAULT_PAYER_INIT: Once = Once::new();
-
-            DEFAULT_PAYER_INIT.call_once(|| {
-                let keypair = Keypair::new();
-
-                self.create_account(
-                    keypair.pubkey(),
-                    system_program::ID,
-                    vec![],
-                    1_000_000_000 * LAMPORTS_PER_SOL,
-                );
-
-                DEFAULT_PAYER = MaybeUninit::new(keypair);
-            });
-
-            DEFAULT_PAYER.assume_init_ref()
-        }
-    }
-
-    fn get_clock(&self) -> Option<Clock> {
+    async fn get_clock(&self) -> Option<Clock> {
         Some(self.get_clock())
     }
 
-    fn set_clock(&self, new_clock: Clock) {
-        self.set_clock(new_clock)
+    fn set_clock(&self, new_clock: Clock) -> Result<()> {
+        self.set_clock(new_clock);
+        Ok(())
     }
 }
