@@ -23,7 +23,7 @@ use solana_sdk::{
 };
 use solana_transaction_status::TransactionStatus;
 
-use crate::solana_rpc_interface::{SolanaRpcInterface, TransactionContext};
+use crate::solana_rpc_interface::{AsyncSigner, SolanaRpcInterface, TransactionContext};
 
 pub struct Client {
     conn: Arc<RpcClient>,
@@ -357,7 +357,7 @@ impl TransactionContext for Client {
     async fn sign_send_instructions(
         &self,
         instructions: &[Instruction],
-        add_signers: Option<&[Box<dyn Signer + Send + Sync>]>,
+        add_signers: Option<&[Arc<dyn AsyncSigner>]>,
     ) -> Result<Signature> {
         let msg = Message::new_with_blockhash(
             instructions,

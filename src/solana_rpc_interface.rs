@@ -15,6 +15,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+use std::sync::Arc;
+
 use anyhow::Result;
 use async_trait::async_trait;
 use solana_sdk::{
@@ -23,12 +25,14 @@ use solana_sdk::{
 };
 use solana_transaction_status::TransactionStatus;
 
+pub trait AsyncSigner: Signer + Send + Sync {}
+
 #[async_trait]
 pub trait TransactionContext: SolanaRpcInterface {
     async fn sign_send_instructions(
         &self,
         instructions: &[Instruction],
-        add_signers: Option<&[Box<dyn Signer + Send + Sync>]>,
+        add_signers: Option<&[Arc<dyn AsyncSigner>]>,
     ) -> Result<Signature>;
     fn payer(&self) -> Pubkey;
 }
