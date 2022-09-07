@@ -15,14 +15,14 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-#[cfg(features = "client")]
+// #[cfg(features = "client")]
 pub mod client;
 
-#[cfg(features = "interface")]
+// #[cfg(features = "interface")]
 pub mod solana_rpc_interface;
 
-#[cfg(features = "runtime")]
+// #[cfg(features = "runtime")]
 pub mod runtime;
 
-#[cfg(features = "utils")]
+// #[cfg(features = "utils")]
 pub mod utils;

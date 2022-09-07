@@ -18,10 +18,20 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use solana_sdk::{
-    account::Account, clock::Clock, hash::Hash, pubkey::Pubkey, signature::Signature,
-    transaction::Transaction,
+    account::Account, clock::Clock, hash::Hash, instruction::Instruction, pubkey::Pubkey,
+    signature::Signature, signer::Signer, transaction::Transaction,
 };
 use solana_transaction_status::TransactionStatus;
+
+#[async_trait]
+pub trait TransactionContext: SolanaRpcInterface {
+    async fn sign_send_instructions(
+        &self,
+        instructions: &[Instruction],
+        add_signers: Option<&[Box<dyn Signer + Send + Sync>]>,
+    ) -> Result<Signature>;
+    fn payer(&self) -> Pubkey;
+}
 
 /// Represents some client interface to the Solana network.
 #[async_trait]

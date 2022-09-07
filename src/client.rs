@@ -14,6 +14,8 @@ use solana_sdk::{
     clock::Clock,
     commitment_config::CommitmentConfig,
     hash::Hash,
+    instruction::Instruction,
+    message::Message,
     pubkey::Pubkey,
     signature::{Keypair, Signature},
     signer::Signer,
@@ -21,7 +23,7 @@ use solana_sdk::{
 };
 use solana_transaction_status::TransactionStatus;
 
-use crate::solana_rpc_interface::SolanaRpcInterface;
+use crate::solana_rpc_interface::{SolanaRpcInterface, TransactionContext};
 
 pub struct Client {
     conn: Arc<RpcClient>,
@@ -344,6 +346,61 @@ impl SolanaRpcInterface for Client {
     }
 
     fn set_clock(&self, _new_clock: Clock) -> Result<()> {
-        Err(Error::msg("Live rpc. Setting the clock is not permissible"))
+        Err(Error::msg(
+            "Live connection. Setting the clock is not permissible",
+        ))
+    }
+}
+
+#[async_trait]
+impl TransactionContext for Client {
+    async fn sign_send_instructions(
+        &self,
+        instructions: &[Instruction],
+        add_signers: Option<&[Box<dyn Signer + Send + Sync>]>,
+    ) -> Result<Signature> {
+        let msg = Message::new_with_blockhash(
+            instructions,
+            Some(&self.payer()),
+            &self.get_latest_blockhash().await?,
+        );
+        let mut signatures = Vec::<(Pubkey, Signature)>::new();
+        for key in msg.signer_keys() {
+            for kp in self.ctx.kps.inner().into_iter().map(|(_, v)| v) {
+                let pk = kp.pubkey();
+                if pk == *key {
+                    signatures.push((pk, kp.sign_message(&msg.serialize())));
+                }
+            }
+            if let Some(kps) = add_signers {
+                for kp in kps {
+                    let pk = kp.pubkey();
+                    if pk == *key {
+                        signatures.push((pk, kp.sign_message(&msg.serialize())))
+                    }
+                }
+            }
+        }
+        let mut tx = Transaction::new_unsigned(msg);
+        let positions = tx.get_signing_keypair_positions(
+            &signatures.iter().map(|(k, _)| *k).collect::<Vec<Pubkey>>(),
+        )?;
+        if positions.iter().any(|p| p.is_none()) {
+            return Err(Error::msg("missing signer"));
+        }
+        let positions = positions.iter().map(|p| p.unwrap()).collect::<Vec<usize>>();
+        let signatures = signatures
+            .into_iter()
+            .map(|(_, s)| s)
+            .collect::<Vec<Signature>>();
+        for i in 0..positions.len() {
+            tx.signatures[positions[i]] = signatures[i];
+        }
+
+        self.send_and_confirm_transaction(&tx).await
+    }
+
+    fn payer(&self) -> Pubkey {
+        self.ctx.kps.get_pubkey("payer").unwrap()
     }
 }
