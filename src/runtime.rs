@@ -51,6 +51,7 @@ pub type EntryFn =
 
 /// A mock of the Solana runtime, which can be used to simulate programs in
 /// an in-memory testing environment.
+#[derive(Clone)]
 pub struct TestRuntime(Arc<RuntimeContext>);
 
 impl TestRuntime {
