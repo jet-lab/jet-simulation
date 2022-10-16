@@ -25,6 +25,7 @@ use async_trait::async_trait;
 use solana_sdk::account::Account as StoredAccount;
 use solana_sdk::account_info::AccountInfo;
 use solana_sdk::clock::Clock;
+use solana_sdk::commitment_config::CommitmentConfig;
 use solana_sdk::entrypoint::{ProgramResult, SUCCESS};
 use solana_sdk::hash::Hash;
 use solana_sdk::instruction::{AccountMeta, Instruction};
@@ -36,6 +37,7 @@ use solana_sdk::program_stubs::{set_syscall_stubs, SyscallStubs};
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::signature::{Keypair, Signature};
 use solana_sdk::signer::Signer;
+use solana_sdk::slot_history::Slot;
 use solana_sdk::system_instruction::{SystemInstruction, MAX_PERMITTED_DATA_LENGTH};
 use solana_sdk::system_program::{self, ID as SYSTEM_PROGRAM_ID};
 use solana_sdk::transaction::Transaction;
@@ -639,6 +641,11 @@ impl SolanaRpcClient for TestRuntime {
 
     async fn get_latest_blockhash(&self) -> anyhow::Result<Hash> {
         Ok(Hash::new_unique())
+    }
+
+    async fn get_slot(&self, _commitment_config: Option<CommitmentConfig>) -> anyhow::Result<Slot> {
+        // just return the slot from the latest updated clock
+        Ok(self.get_clock().slot)
     }
 
     async fn get_minimum_balance_for_rent_exemption(&self, length: usize) -> anyhow::Result<u64> {

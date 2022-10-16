@@ -35,6 +35,7 @@ use solana_sdk::native_token::LAMPORTS_PER_SOL;
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::signature::{Keypair, Signature};
 use solana_sdk::signer::Signer;
+use solana_sdk::slot_history::Slot;
 use solana_sdk::transaction::Transaction;
 use solana_transaction_status::TransactionStatus;
 
@@ -44,6 +45,7 @@ pub trait SolanaRpcClient: Send + Sync {
     async fn get_account(&self, address: &Pubkey) -> Result<Option<Account>>;
     async fn get_multiple_accounts(&self, pubkeys: &[Pubkey]) -> Result<Vec<Option<Account>>>;
     async fn get_latest_blockhash(&self) -> Result<Hash>;
+    async fn get_slot(&self, commitment_config: Option<CommitmentConfig>) -> Result<Slot>;
     async fn get_minimum_balance_for_rent_exemption(&self, length: usize) -> Result<u64>;
     async fn send_transaction(&self, transaction: &Transaction) -> Result<Signature>;
     async fn get_signature_statuses(
@@ -227,6 +229,17 @@ impl SolanaRpcClient for RpcConnection {
 
     async fn get_latest_blockhash(&self) -> Result<Hash> {
         Ok(self.0.rpc.get_latest_blockhash().await?)
+    }
+
+    async fn get_slot(&self, commitment_config: Option<CommitmentConfig>) -> Result<Slot> {
+        match commitment_config {
+            Some(commitment_config) => Ok(self
+                .0
+                .rpc
+                .get_slot_with_commitment(commitment_config)
+                .await?),
+            None => Ok(self.0.rpc.get_slot().await?),
+        }
     }
 
     async fn get_minimum_balance_for_rent_exemption(&self, length: usize) -> Result<u64> {
