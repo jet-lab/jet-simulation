@@ -169,6 +169,15 @@ impl RpcConnection {
 
         Ok(runtime)
     }
+
+    /// Get the underlying [RpcClient]
+    pub fn get_client(&self) -> &RpcClient {
+        &self.0.rpc
+    }
+
+    pub fn payer(&self) -> &Keypair {
+        &self.0.payer
+    }
 }
 
 #[async_trait]
