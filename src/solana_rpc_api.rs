@@ -42,6 +42,7 @@ use solana_transaction_status::TransactionStatus;
 /// Represents some client interface to the Solana network.
 #[async_trait]
 pub trait SolanaRpcClient: Send + Sync {
+    fn as_any(&self) -> &dyn std::any::Any;
     async fn get_account(&self, address: &Pubkey) -> Result<Option<Account>>;
     async fn get_multiple_accounts(&self, pubkeys: &[Pubkey]) -> Result<Vec<Option<Account>>>;
     async fn get_latest_blockhash(&self) -> Result<Hash>;
@@ -172,6 +173,10 @@ impl RpcConnection {
 
 #[async_trait]
 impl SolanaRpcClient for RpcConnection {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self as &dyn (std::any::Any)
+    }
+
     async fn send_and_confirm_transaction(&self, transaction: &Transaction) -> Result<Signature> {
         let commitment = self.0.rpc.commitment();
         let tx_config = self.0.tx_config.unwrap_or(RpcSendTransactionConfig {
