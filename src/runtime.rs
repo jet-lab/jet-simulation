@@ -584,10 +584,6 @@ pub fn noop_program(_: &Pubkey, _: &[AccountInfo], _: &[u8]) -> ProgramResult {
 
 #[async_trait]
 impl SolanaRpcClient for TestRuntime {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self as &dyn (std::any::Any)
-    }
-
     async fn get_account(&self, address: &Pubkey) -> anyhow::Result<Option<StoredAccount>> {
         let info = self.get_account_info(address);
 
