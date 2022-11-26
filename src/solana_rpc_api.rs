@@ -163,7 +163,7 @@ impl RpcConnection {
         runtime
             .0
             .rpc
-            .request_airdrop(&runtime.payer().pubkey(), 100_000 * LAMPORTS_PER_SOL)
+            .request_airdrop(&runtime.payer().pubkey(), 1_000 * LAMPORTS_PER_SOL)
             .await?;
 
         Ok(runtime)
@@ -177,6 +177,13 @@ impl RpcConnection {
     /// Get the underlying transaction config
     pub fn tx_config(&self) -> Option<&RpcSendTransactionConfig> {
         self.0.tx_config.as_ref()
+    }
+    pub async fn request_airdrop(&self, sol: u64) -> Result<Signature> {
+        Ok(self
+            .0
+            .rpc
+            .request_airdrop(&self.payer().pubkey(), sol * LAMPORTS_PER_SOL)
+            .await?)
     }
 }
 
