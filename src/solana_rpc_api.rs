@@ -169,6 +169,15 @@ impl RpcConnection {
         Ok(runtime)
     }
 
+    /// Get the underlying [RpcClient]
+    pub fn client(&self) -> &RpcClient {
+        &self.0.rpc
+    }
+
+    /// Get the underlying transaction config
+    pub fn tx_config(&self) -> Option<&RpcSendTransactionConfig> {
+        self.0.tx_config.as_ref()
+    }
     pub async fn request_airdrop(&self, sol: u64) -> Result<Signature> {
         Ok(self
             .0

@@ -1,6 +1,6 @@
 [package]
 name = "jet-simulation"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 
 [dependencies]
@@ -13,14 +13,12 @@ parking_lot = "0.12"
 rand = "0.7"
 tokio = { version = "1", features = ["rt"] }
 
-solana-account-decoder = "1.10"
-solana-client = "1.10"
-solana-sdk = "1.10"
-solana-transaction-status = "1.10"
+solana-account-decoder = ">= 1.10, <= 1.14"
+solana-client = ">= 1.10, <= 1.14"
+solana-sdk = ">= 1.10, <= 1.14"
+solana-transaction-status = ">= 1.10, <= 1.14"
 
 spl-token = "3"
 spl-token-swap = "2"
 spl-associated-token-account = "1"
-pyth-sdk-solana = "0.4"
-
-anchor-lang = { git = "https://github.com/jet-lab/anchor", branch = "master" }
+pyth-sdk-solana = "0.7"
